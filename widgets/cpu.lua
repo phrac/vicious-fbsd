@@ -32,47 +32,43 @@ local cpu_active = {}
 local function worker(format)
     local cpu_lines = {}
 
-    -- Get CPU stats
-    local f = io.open("/proc/stat")
-    for line in f:lines() do
-        if string.sub(line, 1, 3) ~= "cpu" then break end
+    ---- Get cpu stats
+	local cpu_usage_file = io.popen( 'sysctl -n kern.cp_time' )
+	local v = splitbywhitespace( cpu_usage_file:read());
+	cpu_usage_file:close()
 
-        cpu_lines[#cpu_lines+1] = {}
+	---- Ensure tables are initialized correctly
+	while #cpu_total < 1 do
+		table.insert(cpu_total, 0)
+	end
+	while #cpu_active < 1 do
+		table.insert(cpu_active, 0)
+	end
+	while #cpu_usage < 1 do
+		table.insert(cpu_usage, 0)
+	end
 
-        for i in string.gmatch(line, "[%s]+([^%s]+)") do
-            table.insert(cpu_lines[#cpu_lines], i)
-        end
-    end
-    f:close()
+	---- Setup tables
+	local total_new     = {}
+	local active_new    = {}
+	local diff_total    = {}
+	local diff_active   = {}
 
-    -- Ensure tables are initialized correctly
-    for i = #cpu_total + 1, #cpu_lines do
-        cpu_total[i]  = 0
-        cpu_usage[i]  = 0
-        cpu_active[i] = 0
-    end
+	---- FreeBSD kern.cp_time combines all CPUs/cores
+	local i = 1
 
+	---- Calculate totals
+	total_new[i] = v[1] + v[2] + v[3] + v[5]
+	active_new[i] = v[1] + v[2] + v[3]
 
-    for i, v in ipairs(cpu_lines) do
-        -- Calculate totals
-        local total_new = 0
-        for j = 1, #v do
-            total_new = total_new + v[j]
-        end
-        local active_new = total_new - (v[4] + v[5])
+	---- Calculate percentage
+	diff_total[i]   = total_new[i]  - cpu_total[i]
+	diff_active[i]  = active_new[i] - cpu_active[i]
+	cpu_usage[i]    = math.floor( ( diff_active[i] / diff_total[i] ) * 100)
 
-        -- Calculate percentage
-        local diff_total  = total_new - cpu_total[i]
-        local diff_active = active_new - cpu_active[i]
-
-        if diff_total == 0 then diff_total = 1E-6 end
-        cpu_usage[i]      = math.floor((diff_active / diff_total) * 100)
-
-        -- Store totals
-        cpu_total[i]   = total_new
-        cpu_active[i]  = active_new
-    end
-
+	---- Store totals
+	cpu_total[i]    = total_new[i]
+	cpu_active[i]   = active_new[i]
     return cpu_usage
 end
 -- }}}
