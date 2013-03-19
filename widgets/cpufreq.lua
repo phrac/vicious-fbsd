@@ -35,10 +35,10 @@ local function worker(format, warg)
     }
 
     -- Get the current frequency
-    local freq = tonumber(_cpufreq.scaling_cur_freq)
+    local freq = io.popen( 'sysctl -n dev.cpu.0.freq' )
     -- Calculate MHz and GHz
     if freq then
-        freqv.mhz = freq / 1000
+        freqv.mhz = freq
         freqv.ghz = freqv.mhz / 1000
 
         -- Get the current voltage
