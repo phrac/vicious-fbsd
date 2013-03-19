@@ -5,7 +5,6 @@
 ---------------------------------------------------
 
 -- {{{ Grab environment
-local print = print
 local tonumber = tonumber
 local io = { popen = io.popen }
 local setmetatable = setmetatable
@@ -13,8 +12,10 @@ local string = { match = string.match }
 local helpers = require("vicious.helpers")
 -- }}}
 
+
 -- FS: provides file system disk space usage
-module("vicious.widgets.fs")
+-- vicious.widgets.fs
+local fs = {}
 
 
 -- Variable definitions
@@ -28,11 +29,10 @@ local function worker(format, warg)
     local fs_info = {} -- Get data from df
     local f = io.popen("LC_ALL=C df -kP " .. warg)
 
-
     for line in f:lines() do -- Match: (size) (used)(avail)(use%) (mount)
         local s     = string.match(line, "^.-[%s]([%d]+)")
         local u,a,p = string.match(line, "([%d]+)[%D]+([%d]+)[%D]+([%d]+)%%")
-        local m     = string.match(line, "%%[%s]+([%p%w]+)")
+        local m     = string.match(line, "%%[%s]([%p%w]+)")
 
         if u and m then -- Handle 1st line and broken regexp
             helpers.uformat(fs_info, m .. " size",  s, unit)
@@ -49,4 +49,4 @@ local function worker(format, warg)
 end
 -- }}}
 
-setmetatable(_M, { __call = function(_, ...) return worker(...) end })
+return setmetatable(fs, { __call = function(_, ...) return worker(...) end })

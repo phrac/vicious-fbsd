@@ -5,7 +5,7 @@
 ---------------------------------------------------
 
 -- {{{ Grab environment
-local io = { lines = io.lines, popen = io.popen }
+local io = { lines = io.lines }
 local setmetatable = setmetatable
 local math = { floor = math.floor }
 local string = { gmatch = string.gmatch }
@@ -13,45 +13,40 @@ local string = { gmatch = string.gmatch }
 
 
 -- Mem: provides RAM and Swap usage statistics
-module("vicious.widgets.mem")
+-- vicious.widgets.mem
+local mem = {}
 
 
 -- {{{ Memory widget type
 local function worker(format)
-    local mem = { buf = {}, swp = {} }
+    local _mem = { buf = {}, swp = {} }
 
-	-- get mem data frem sysctl
-	local fd = io.popen( 'sysctl -n hw.pagesize' )
-	local pagesize = fd:read();
-	fd:close()
+    -- Get MEM info
+    for line in io.lines("/proc/meminfo") do
+        for k, v in string.gmatch(line, "([%a]+):[%s]+([%d]+).+") do
+            if     k == "MemTotal"  then _mem.total = math.floor(v/1024)
+            elseif k == "MemFree"   then _mem.buf.f = math.floor(v/1024)
+            elseif k == "Buffers"   then _mem.buf.b = math.floor(v/1024)
+            elseif k == "Cached"    then _mem.buf.c = math.floor(v/1024)
+            elseif k == "SwapTotal" then _mem.swp.t = math.floor(v/1024)
+            elseif k == "SwapFree"  then _mem.swp.f = math.floor(v/1024)
+            end
+        end
+    end
 
-	fd = io.popen( 'sysctl -n vm.stats.vm.v_page_count' )
-	local total_pages = fd:read();
-	fd:close()
+    -- Calculate memory percentage
+    _mem.free  = _mem.buf.f + _mem.buf.b + _mem.buf.c
+    _mem.inuse = _mem.total - _mem.free
+    _mem.bcuse = _mem.total - _mem.buf.f
+    _mem.usep  = math.floor(_mem.inuse / _mem.total * 100)
+    -- Calculate swap percentage
+    _mem.swp.inuse = _mem.swp.t - _mem.swp.f
+    _mem.swp.usep  = math.floor(_mem.swp.inuse / _mem.swp.t * 100)
 
-	fd = io.popen( 'sysctl -n vm.stats.vm.v_free_count' )
-	local free_pages = fd:read();
-	fd:close()
-
-	fd = io.popen( 'sysctl -n vm.stats.vm.v_inactive_count' )
-	local inact_pages = fd:read();
-	fd:close()
-
-	-- Calculate percentage
-	mem.total = ( total_pages * pagesize )
-	mem.free = ( free_pages + inact_pages ) * pagesize
-	mem.inuse = ( total_pages - free_pages - inact_pages ) * pagesize
-	mem.usep = math.floor( mem.inuse / mem.total * 100 )
-
-	-- TODO:
-	mem.swp.total = 0
-	mem.swp.free = 0
-	mem.swp.inuse = 0
-	mem.swp.usep = 0
-
-    return {mem.usep,     mem.inuse,     mem.total, mem.free,
-            mem.swp.usep, mem.swp.inuse, mem.swp.t, mem.swp.f}
+    return {_mem.usep,     _mem.inuse,     _mem.total, _mem.free,
+            _mem.swp.usep, _mem.swp.inuse, _mem.swp.t, _mem.swp.f,
+            _mem.bcuse }
 end
 -- }}}
 
-setmetatable(_M, { __call = function(_, ...) return worker(...) end })
+return setmetatable(mem, { __call = function(_, ...) return worker(...) end })

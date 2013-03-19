@@ -8,7 +8,6 @@ local tonumber = tonumber
 local setmetatable = setmetatable
 local string = { format = string.format }
 local helpers = require("vicious.helpers")
-local io = { lines = io.lines, popen = io.popen }
 local math = {
     min = math.min,
     floor = math.floor
@@ -17,46 +16,75 @@ local math = {
 
 
 -- Bat: provides state, charge, and remaining time for a requested battery
-module("vicious.widgets.bat")
+-- vicious.widgets.bat
+local bat = {}
 
 
 -- {{{ Battery widget type
 local function worker(format, warg)
-    --if not warg then return end
+    if not warg then return end
 
-    local battery_state = {}
-	battery_state["0"] = "↯" -- full
-	battery_state["1"] = "-" -- unplugged/discharging
-	battery_state["2"] = "+" -- charging
-	unknown = "⌁"
+    local battery = helpers.pathtotable("/sys/class/power_supply/"..warg)
+    local battery_state = {
+        ["Full\n"]        = "↯",
+        ["Unknown\n"]     = "⌁",
+        ["Charged\n"]     = "↯",
+        ["Charging\n"]    = "+",
+        ["Discharging\n"] = "-"
+    }
 
-	local fd = io.popen( 'sysctl -n hw.acpi.battery.life' )
-	if not fd then
-		return {unknown, "0", "N/A"}
-	end
-	local b_life = fd:read()
-	fd:close()
+    -- Check if the battery is present
+    if battery.present ~= "1\n" then
+        return {battery_state["Unknown\n"], 0, "N/A"}
+    end
 
-	fd = io.popen( 'sysctl -n hw.acpi.battery.time' )
-	local b_time = fd:read()
-	fd:close()
-
-	fd = io.popen( 'sysctl -n hw.acpi.battery.state' )
-	local b_state = fd:read()
-	fd:close()
 
     -- Get state information
-	if b_time ~= "-1" then
-		local time_h = math.floor( b_time / 60 )
-		local time_m = b_time - 60*time_h
-		time = string.format("%02d:%02d", time_h, time_m)
-	else
-		time = "N/A"
-	end
+    local state = battery_state[battery.status] or battery_state["Unknown\n"]
 
-    local state = battery_state[b_state] or unknown
-    return {state, b_life, time}
+    -- Get capacity information
+    if battery.charge_now then
+        remaining, capacity = battery.charge_now, battery.charge_full
+    elseif battery.energy_now then
+        remaining, capacity = battery.energy_now, battery.energy_full
+    else
+        return {battery_state["Unknown\n"], 0, "N/A"}
+    end
+
+    -- Calculate percentage (but work around broken BAT/ACPI implementations)
+    local percent = math.min(math.floor(remaining / capacity * 100), 100)
+
+
+    -- Get charge information
+    if battery.current_now then
+        rate = tonumber(battery.current_now)
+    elseif battery.power_now then
+        rate = tonumber(battery.power_now)
+    else
+        return {state, percent, "N/A"}
+    end
+
+    -- Calculate remaining (charging or discharging) time
+    local time = "N/A"
+
+    if rate ~= nil and rate ~= 0 then
+        if state == "+" then
+            timeleft = (tonumber(capacity) - tonumber(remaining)) / tonumber(rate)
+        elseif state == "-" then
+            timeleft = tonumber(remaining) / tonumber(rate)
+        else
+            return {state, percent, time}
+        end
+
+        -- Calculate time
+        local hoursleft   = math.floor(timeleft)
+        local minutesleft = math.floor((timeleft - hoursleft) * 60 )
+
+        time = string.format("%02d:%02d", hoursleft, minutesleft)
+    end
+
+    return {state, percent, time}
 end
 -- }}}
 
-setmetatable(_M, { __call = function(_, ...) return worker(...) end })
+return setmetatable(bat, { __call = function(_, ...) return worker(...) end })
